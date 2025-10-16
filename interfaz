@@ -1,139 +1,144 @@
-import http.server
-import socketserver
+import tkinter as tk
+from tkinter import ttk
+from PIL import Image, ImageTk
 import json
-import time
-import random
 import os
 
-# --- DATOS DE PARTIDOS DE EJEMPLO (FALLBACK) ---
-# Se usarán si no se encuentra el archivo 'torneo_data.json'
-mock_data = {
-    "futbol": [
-        { "id": 1, "league": 'La Liga', "teamA": 'Real Madrid', "teamB": 'FC Barcelona', "scoreA": 1, "scoreB": 1, "status": 'live', "time": '75\'', "logoA": 'https://placehold.co/64x64/ffffff/000000?text=RM', "logoB": 'https://placehold.co/64x64/A50044/ffffff?text=FCB' },
-        { "id": 2, "league": 'Premier League', "teamA": 'Man. United', "teamB": 'Liverpool', "scoreA": 0, "scoreB": 2, "status": 'live', "time": '52\'', "logoA": 'https://placehold.co/64x64/DA291C/ffffff?text=MU', "logoB": 'https://placehold.co/64x64/C8102E/ffffff?text=LFC' },
-    ],
-    "baloncesto": [
-        { "id": 5, "league": 'NBA', "teamA": 'Lakers', "teamB": 'Celtics', "scoreA": 102, "scoreB": 98, "status": 'live', "time": 'Q4 2:15', "logoA": 'https://placehold.co/64x64/552583/FDB927?text=LAL', "logoB": 'https://placehold.co/64x64/008348/000000?text=BOS' }
-    ],
-    "tenis": [
-        { "id": 7, "league": 'US Open', "teamA": 'Alcaraz', "teamB": 'Djokovic', "scoreA": 2, "scoreB": 1, "status": 'live', "time": 'Set 4', "sets": '(6-3, 4-6, 7-6)', "logoA": 'https://placehold.co/64x64/FFC400/000000?text=CA', "logoB": 'https://placehold.co/64x64/2E6DB4/ffffff?text=ND' }
-    ]
-}
+# ==============================
+# 🔹 Cargar datos del torneo
+# ==============================
+def cargar_datos():
+    with open("torneo_data.json", "r", encoding="utf-8") as f:
+        return json.load(f)
 
-def update_mock_scores():
-    """Función para simular la actualización de marcadores (solo para datos de ejemplo)."""
-    for match in mock_data["futbol"]:
-        if match["status"] == 'live' and random.random() > 0.9:
-            match["scoreA"] += 1
-    # ... (se pueden agregar más lógicas de simulación aquí)
+# ==============================
+# 🔹 Clase principal de la app
+# ==============================
+class AppTorneo:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Copa del Mundo Sub-20 | Chile 2025")
+        self.root.geometry("900x600")
+        self.root.configure(bg="#1b1b1b")
 
+        # Datos del torneo
+        self.datos = cargar_datos()
 
-def cargar_datos_reales():
-    """
-    Carga los datos desde torneo_data.json y los transforma al formato
-    que espera la interfaz web (frontend).
-    """
-    FILENAME = 'torneo_data.json'
-    if not os.path.exists(FILENAME):
-        print(f"ADVERTENCIA: No se encontró '{FILENAME}'. Se usarán los datos de ejemplo.")
-        update_mock_scores()
-        return mock_data
+        # Fases del torneo
+        self.fases = ["Fase de Grupos", "Octavos de Final", "Cuartos de Final", "Semifinales", "Final"]
 
-    try:
-        with open(FILENAME, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        equipos = data.get('equipos', {})
-        calendario = data.get('calendario', {})
-        
-        partidos_futbol = []
-        # Ordenar partidos por su ID (M001, M002, etc.) para mantener consistencia
-        for match_id in sorted(calendario.keys()):
-            partido_data = calendario[match_id]
-            
-            id_equipo1 = partido_data.get('id_equipo1')
-            id_equipo2 = partido_data.get('id_equipo2')
-            
-            equipo1_obj = equipos.get(id_equipo1, {'pais': id_equipo1, 'abreviatura': '???_1'})
-            equipo2_obj = equipos.get(id_equipo2, {'pais': id_equipo2, 'abreviatura': '???_2'})
-            
-            goles1 = partido_data.get('goles_e1')
-            goles2 = partido_data.get('goles_e2')
-            
-            # Determinar estado del partido
-            if goles1 is None or goles2 is None:
-                status = 'upcoming'
-                time_str = partido_data.get('hora') or 'Pendiente'
-            else:
-                status = 'finished'
-                time_str = 'FT' # Full Time
+        # Interfaz general
+        self.crear_panel_lateral()
+        self.crear_area_principal()
 
-            partido_formateado = {
-                "id": match_id,
-                "league": partido_data.get('fase', 'Fase de Grupos'),
-                "teamA": equipo1_obj['pais'],
-                "teamB": equipo2_obj['pais'],
-                "scoreA": goles1 if goles1 is not None else 0,
-                "scoreB": goles2 if goles2 is not None else 0,
-                "status": status,
-                "time": time_str,
-                "logoA": f"https://placehold.co/64x64/374151/E5E7EB?text={equipo1_obj['abreviatura']}",
-                "logoB": f"https://placehold.co/64x64/374151/E5E7EB?text={equipo2_obj['abreviatura']}"
-            }
-            partidos_futbol.append(partido_formateado)
-            
-        return {
-            "futbol": partidos_futbol,
-            "baloncesto": [], # Tu app es solo de fútbol
-            "tenis": []
-        }
+    # -----------------------------
+    # 🔹 Panel lateral con fases
+    # -----------------------------
+    def crear_panel_lateral(self):
+        self.panel_lateral = tk.Frame(self.root, bg="#121212", width=200)
+        self.panel_lateral.pack(side="left", fill="y")
 
-    except (json.JSONDecodeError, IOError) as e:
-        print(f"ERROR: No se pudo leer o procesar '{FILENAME}': {e}. Se usarán los datos de ejemplo.")
-        update_mock_scores()
-        return mock_data
+        titulo = tk.Label(self.panel_lateral, text="Fases", fg="white", bg="#121212",
+                          font=("Segoe UI", 14, "bold"), pady=15)
+        titulo.pack()
 
+        for fase in self.fases:
+            boton = tk.Button(
+                self.panel_lateral,
+                text=fase,
+                font=("Segoe UI", 11),
+                bg="#1f1f1f",
+                fg="white",
+                activebackground="#2e2e2e",
+                activeforeground="#00bfff",
+                bd=0,
+                padx=10,
+                pady=10,
+                anchor="w",
+                command=lambda f=fase: self.mostrar_partidos(f)
+            )
+            boton.pack(fill="x", pady=2)
 
-# Definimos el manejador de peticiones HTTP
-class MyHttpRequestHandler(http.server.SimpleHTTPRequestHandler):
-    def do_GET(self):
-        # Ruta para la API que devuelve los datos de los partidos
-        if self.path == '/api/matches':
-            # Cargar y formatear los datos reales del torneo
-            datos_para_enviar = cargar_datos_reales()
-            
-            # Preparar la respuesta JSON
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*') # Para evitar problemas de CORS
-            self.end_headers()
-            
-            # Convertir el diccionario de Python a una cadena JSON y codificarla a bytes
-            response_data = json.dumps(datos_para_enviar).encode('utf-8')
-            self.wfile.write(response_data)
+    # -----------------------------
+    # 🔹 Área principal
+    # -----------------------------
+    def crear_area_principal(self):
+        self.area_principal = tk.Frame(self.root, bg="#1b1b1b")
+        self.area_principal.pack(side="right", fill="both", expand=True)
+
+        self.titulo_fase = tk.Label(self.area_principal, text="Seleccione una fase",
+                                    bg="#1b1b1b", fg="white",
+                                    font=("Segoe UI", 16, "bold"))
+        self.titulo_fase.pack(pady=20)
+
+        self.frame_partidos = tk.Frame(self.area_principal, bg="#1b1b1b")
+        self.frame_partidos.pack(fill="both", expand=True)
+
+    # -----------------------------
+    # 🔹 Mostrar partidos por fase
+    # -----------------------------
+    def mostrar_partidos(self, fase):
+        # Limpiar área
+        for widget in self.frame_partidos.winfo_children():
+            widget.destroy()
+
+        self.titulo_fase.config(text=fase)
+
+        # Filtrar partidos de la fase
+        partidos = [p for p in self.datos["calendario"].values() if p["fase"] == fase]
+
+        if not partidos:
+            tk.Label(self.frame_partidos, text="No hay partidos en esta fase.",
+                     bg="#1b1b1b", fg="gray", font=("Segoe UI", 12)).pack(pady=20)
             return
-        
-        # Ruta para la página principal
-        if self.path == '/':
-            self.path = 'marcador_vivo.html'
 
-        # Para cualquier otra petición, usar el comportamiento por defecto (servir archivos)
-        return http.server.SimpleHTTPRequestHandler.do_GET(self)
+        for partido in partidos:
+            self.mostrar_tarjeta_partido(partido)
 
-# Configuración del servidor
-PORT = 8000
-handler_object = MyHttpRequestHandler
+    # -----------------------------
+    # 🔹 Tarjeta visual de partido
+    # -----------------------------
+    def mostrar_tarjeta_partido(self, partido):
+        equipo1 = self.datos["equipos"][partido["equipo1"]]
+        equipo2 = self.datos["equipos"][partido["equipo2"]]
 
-with socketserver.TCPServer(("", PORT), handler_object) as httpd:
-    print("*"*50)
-    print(f"Servidor iniciado en http://localhost:{PORT}")
-    print("Este servidor ahora lee los datos desde 'torneo_data.json'")
-    print("Asegúrate de ejecutar tu aplicación tkinter primero para generar ese archivo.")
-    print("Presiona Ctrl+C para detener el servidor.")
-    print("*"*50)
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("\nDeteniendo el servidor.")
-        httpd.shutdown()
+        contenedor = tk.Frame(self.frame_partidos, bg="#262626", pady=10, padx=15)
+        contenedor.pack(pady=8, padx=25, fill="x")
 
+        # Banderas y nombres
+        try:
+            bandera1 = Image.open(equipo1["bandera"]).resize((64, 40))
+            bandera2 = Image.open(equipo2["bandera"]).resize((64, 40))
+            img1 = ImageTk.PhotoImage(bandera1)
+            img2 = ImageTk.PhotoImage(bandera2)
+        except:
+            img1 = img2 = None
+
+        lbl_band1 = tk.Label(contenedor, image=img1, bg="#262626")
+        lbl_band1.image = img1
+        lbl_band1.grid(row=0, column=0, padx=10)
+
+        lbl_e1 = tk.Label(contenedor, text=equipo1["pais"], fg="white", bg="#262626", font=("Segoe UI", 12))
+        lbl_e1.grid(row=0, column=1, padx=5)
+
+        lbl_vs = tk.Label(contenedor, text=f"{partido['resultado']}", fg="#00bfff", bg="#262626", font=("Segoe UI", 13, "bold"))
+        lbl_vs.grid(row=0, column=2, padx=25)
+
+        lbl_e2 = tk.Label(contenedor, text=equipo2["pais"], fg="white", bg="#262626", font=("Segoe UI", 12))
+        lbl_e2.grid(row=0, column=3, padx=5)
+
+        lbl_band2 = tk.Label(contenedor, image=img2, bg="#262626")
+        lbl_band2.image = img2
+        lbl_band2.grid(row=0, column=4, padx=10)
+
+        lbl_info = tk.Label(contenedor, text=f"📅 {partido['fecha']}  🕓 {partido['hora']}",
+                            fg="gray", bg="#262626", font=("Segoe UI", 10))
+        lbl_info.grid(row=1, column=0, columnspan=5, pady=5)
+
+# ==============================
+# 🔹 Ejecución principal
+# ==============================
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = AppTorneo(root)
+    root.mainloop()
