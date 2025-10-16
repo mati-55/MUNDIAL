@@ -427,4 +427,3 @@ class PhaseGroupsUI:
             if e.pais == pais:
                 return e.abreviatura
         return pais[:3].upper() if pais else ""
-
