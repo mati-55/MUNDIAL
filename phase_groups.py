@@ -36,6 +36,230 @@ class PhaseGroupsUI:
         self._load_into_torneo()
         self._build_ui()
         self._load_jornada(self.current_jornada)
+    # ================== Helpers de fechas/horarios y standings ==================
+
+    def _normalize_col(self, s):
+        return str(s).strip().lower().replace("á","a").replace("é","e").replace("í","i").replace("ó","o").replace("ú","u")
+
+    def _parse_date_strict(self, s):
+        # Acepta "dd/mm/yyyy" o "yyyy-mm-dd"
+        from datetime import datetime
+        if s is None or (isinstance(s, float) and pd.isna(s)):
+            return None
+        if isinstance(s, (pd.Timestamp, )):
+            return s.date()
+        ss = str(s).strip()
+        for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%y"):
+            try:
+                return datetime.strptime(ss, fmt).date()
+            except Exception:
+                pass
+        return None
+
+    def _parse_time_flexible(self, s):
+        # Devuelve texto HH:MM (no forzamos datetime)
+        if s is None or (isinstance(s, float) and pd.isna(s)):
+            return ""
+        ss = str(s).strip()
+        # Si viene como Timestamp, etc:
+        try:
+            # pandas puede traer horas como Timestamp; lo convertimos a HH:MM
+            t = pd.to_datetime(ss, errors='coerce')
+            if pd.notna(t):
+                return t.strftime("%H:%M")
+        except Exception:
+            pass
+        # Si ya está en texto HH:MM u otro; devolvemos tal cual:
+        return ss
+
+    def _torneo_date_bounds(self):
+        from datetime import datetime
+        # core.Torneo guarda strings 'YYYY-MM-DD'
+        start = pd.to_datetime(self.torneo.fecha_inicio).date()
+        end = pd.to_datetime(self.torneo.fecha_fin).date()
+        return start, end
+
+    def _date_in_range(self, d):
+        if d is None: return False
+        start, end = self._torneo_date_bounds()
+        return start <= d <= end
+
+    def _load_group_schedule_df(self):
+        """
+        Lee 'FIFA_Sub20_2025_FaseGrupos partidos.xlsx' (o el alternativo con '_Partidos.xlsx')
+        y devuelve un DataFrame con columnas normalizadas:
+        ['grupo','equipo1','equipo2','fecha','hora']  (fecha: date, hora: HH:MM string)
+        """
+        base = os.path.dirname(__file__)
+        candidates = [
+            os.path.join(base, "FIFA_Sub20_2025_FaseGrupos partidos.xlsx"),
+            os.path.join(base, "FIFA_Sub20_2025_FaseGrupos_Partidos.xlsx"),
+        ]
+        path = None
+        for c in candidates:
+            if os.path.exists(c):
+                path = c
+                break
+        if not path:
+            return pd.DataFrame(columns=["grupo","equipo1","equipo2","fecha","hora"])
+
+        df = pd.read_excel(path)
+        # map columns
+        cols = {self._normalize_col(c): c for c in df.columns}
+        # buscadores flexibles
+        def pick(*names):
+            for n in names:
+                nn = self._normalize_col(n)
+                if nn in cols:
+                    return cols[nn]
+            return None
+        c_grupo = pick("grupo")
+        c_e1    = pick("equipo1","e1","local","pais1")
+        c_e2    = pick("equipo2","e2","visitante","pais2")
+        c_fecha = pick("fecha","dia","fechajuego")
+        c_hora  = pick("hora","horario","inicio")
+
+        out = []
+        for _,r in df.iterrows():
+            grupo  = str(r.get(c_grupo,"")).strip().upper() if c_grupo else ""
+            e1     = str(r.get(c_e1,"")).strip()
+            e2     = str(r.get(c_e2,"")).strip()
+            fecha  = self._parse_date_strict(r.get(c_fecha))
+            hora   = self._parse_time_flexible(r.get(c_hora))
+            if grupo and e1 and e2 and fecha:
+                out.append({"grupo":grupo,"equipo1":e1,"equipo2":e2,"fecha":fecha,"hora":hora})
+        return pd.DataFrame(out)
+
+    def _load_elim_schedule_df(self):
+        """
+        Lee 'fechas_fase_eliminatoria.xlsx' y devuelve DF normalizado:
+        ['fase','fecha','hora'] (una fila por partido programado en esa fase).
+        El emparejamiento a partidos concretos se hace por orden.
+        """
+        base = os.path.dirname(__file__)
+        path = os.path.join(base, "fechas_fase_eliminatoria.xlsx")
+        if not os.path.exists(path):
+            return pd.DataFrame(columns=["fase","fecha","hora"])
+        df = pd.read_excel(path)
+        cols = {self._normalize_col(c): c for c in df.columns}
+        def pick(*names):
+            for n in names:
+                nn = self._normalize_col(n)
+                if nn in cols:
+                    return cols[nn]
+            return None
+        c_fase  = pick("fase","etapa")
+        c_fecha = pick("fecha","dia")
+        c_hora  = pick("hora","horario","inicio")
+        out = []
+        for _,r in df.iterrows():
+            fase  = str(r.get(c_fase,"")).strip().capitalize()
+            fecha = self._parse_date_strict(r.get(c_fecha))
+            hora  = self._parse_time_flexible(r.get(c_hora))
+            if fase and fecha:
+                # Normalizar nombres esperados
+                if fase.lower().startswith("oct"):  fase = "Octavos"
+                elif fase.lower().startswith("cua"): fase = "Cuartos"
+                elif "semi" in fase.lower():        fase = "Semifinal"
+                elif "final" == fase.lower():       fase = "Final"
+                elif "gran final" in fase.lower():  fase = "Final"
+                out.append({"fase":fase,"fecha":fecha,"hora":hora})
+        # Garantizar orden
+        return pd.DataFrame(out)
+
+    def _match_datetime_group(self, id1, id2):
+        """
+        Dado un partido de fase de grupos por IDs (A1, B3,...), retorna (fecha, hora)
+        buscándolo en el Excel de grupos: matchea por grupo y por nombres de países.
+        """
+        df = getattr(self, "_df_grp_sched", None)
+        if df is None:
+            df = self._load_group_schedule_df()
+            self._df_grp_sched = df
+
+        e1 = self.torneo.equipos.get(id1)
+        e2 = self.torneo.equipos.get(id2)
+        if not e1 or not e2:
+            return (None, "")
+
+        g = (e1.grupo or e2.grupo or "").upper()
+        pais1 = e1.pais; pais2 = e2.pais
+
+        # buscar fila (pais1,pais2) o (pais2,pais1)
+        q = df[(df["grupo"]==g) &
+               (((df["equipo1"]==pais1)&(df["equipo2"]==pais2)) |
+                ((df["equipo1"]==pais2)&(df["equipo2"]==pais1)))]
+        if len(q) == 0:
+            return (None, "")
+        # si hay varios, tomar el primero
+        r = q.iloc[0]
+        return (r["fecha"], r["hora"])
+
+    def _match_datetime_elim(self, fase, ordinal_en_fase):
+        """
+        Retorna (fecha,hora) a partir del Excel de eliminatorias, asignando por 'ordinal_en_fase' (1-based).
+        """
+        df = getattr(self, "_df_elim_sched", None)
+        if df is None:
+            df = self._load_elim_schedule_df()
+            self._df_elim_sched = df
+        pool = df[df["fase"]==fase].reset_index(drop=True)
+        if len(pool)==0: return (None,"")
+        idx = min(max(ordinal_en_fase-1,0), len(pool)-1)
+        r = pool.iloc[idx]
+        return (r["fecha"], r["hora"])
+
+    def _standings_as_of_date(self, cutoff_date):
+        """
+        Devuelve {grupo: {equipo_id: stats_temp}} usando SOLO partidos de FASE DE GRUPOS
+        cuya fecha (por Excel de grupos) sea <= cutoff_date.
+        No altera self.torneo (trabaja en copia).
+        """
+        # Inicializar estructura
+        tmp = {}
+        for id,e in self.torneo.equipos.items():
+            if e.grupo:
+                tmp.setdefault(e.grupo, {})
+                tmp[e.grupo][id] = {'PJ':0,'G':0,'E':0,'P':0,'GF':0,'GC':0,'DG':0,'Pts':0}
+
+        # iterar todos los partidos de fase de grupos
+        for mid,p in self.torneo.calendario.items():
+            if p.fase != "Fase de Grupos":
+                continue
+            # Fecha del partido desde Excel de grupos:
+            fecha,_ = self._match_datetime_group(p.id_equipo1, p.id_equipo2)
+            if fecha is None or fecha > cutoff_date:
+                continue
+            if p.goles_e1 is None or p.goles_e2 is None:
+                # si no hay resultado, no cuenta para la tabla hasta ese día
+                continue
+            g1 = p.id_equipo1; g2 = p.id_equipo2
+            e1 = self.torneo.equipos.get(g1); e2 = self.torneo.equipos.get(g2)
+            if not e1 or not e2: continue
+            g = e1.grupo
+            # acumular
+            tmp[g][g1]['PJ'] += 1; tmp[g][g2]['PJ'] += 1
+            tmp[g][g1]['GF'] += p.goles_e1; tmp[g][g1]['GC'] += p.goles_e2
+            tmp[g][g2]['GF'] += p.goles_e2; tmp[g][g2]['GC'] += p.goles_e1
+            if p.goles_e1 > p.goles_e2:
+                tmp[g][g1]['G']+=1; tmp[g][g2]['P']+=1; tmp[g][g1]['Pts']+=3
+            elif p.goles_e1 < p.goles_e2:
+                tmp[g][g2]['G']+=1; tmp[g][g1]['P']+=1; tmp[g][g2]['Pts']+=3
+            else:
+                tmp[g][g1]['E']+=1; tmp[g][g2]['E']+=1; tmp[g][g1]['Pts']+=1; tmp[g][g2]['Pts']+=1
+            tmp[g][g1]['DG'] = tmp[g][g1]['GF'] - tmp[g][g1]['GC']
+            tmp[g][g2]['DG'] = tmp[g][g2]['GF'] - tmp[g][g2]['GC']
+
+        # devolver ordenado por grupo con lista de filas ordenadas
+        out = {}
+        for g,table in tmp.items():
+            rows = []
+            for id,st in table.items():
+                eq = self.torneo.equipos[id]
+                rows.append((id, eq.abreviatura, eq.pais, st))
+            rows.sort(key=lambda x: (x[3]['Pts'], x[3]['DG'], x[3]['GF']), reverse=True)
+            out[g] = rows
+        return out
 
     def _load_into_torneo(self):
         # add teams with ids like A1..F4 maintaining positions
@@ -167,7 +391,7 @@ class PhaseGroupsUI:
             # Show also updated mini tabla for this group
             grupo = equipo1.grupo
             tabla = self.torneo.calcular_tabla_posiciones(grupo)
-            abla_txt = "\n".join([f"{i+1} -{t.pais} - Pts:{t.stats['Pts']}" for i,t in enumerate(tabla)])
+            tabla_txt = "\n".join([f"{i+1} -{t.pais} - Pts:{t.stats['Pts']}" for i,t in enumerate(tabla)])
             messagebox.showinfo("Resultado guardado", f"Partido: {partido_info}\n\nTabla actualizada Grupo {grupo}:\n{tabla_txt}")
 
         ttk.Button(frm, text="Guardar", command=save).pack(pady=8)
@@ -295,136 +519,154 @@ class PhaseGroupsUI:
 
     def show_reports_window(self):
         """
-        Ventana con 5 tipos de informe:
-        1) Tabla por grupo
-        2) Resultados Jornada
-        3) Partidos pendientes
-        4) Estadísticas por equipo
-        5) Clasificados a Eliminatorias (1os,2os,mejores 3os)
+        Nueva versión de Informes:
+        Paso 1: elegir el tipo de informe
+        Paso 2: ingresar datos específicos según el tipo seleccionado
         """
-        win = tk.Toplevel(self.master); win.title("Informes")
-        win.geometry("900x550"); win.transient(self.master); win.grab_set()
-        container = ttk.Frame(win, padding=8); container.pack(fill='both', expand=True)
+        # ---------- PRIMERA VENTANA: ELECCIÓN DEL INFORME ----------
+        select_win = tk.Toplevel(self.master)
+        select_win.title("Seleccionar tipo de informe")
+        select_win.geometry("700x400")
+        select_win.transient(self.master)
+        select_win.grab_set()
 
-        left = ttk.Frame(container); left.pack(side='left', fill='y', padx=(0,8))
-        reports = [
-            "1 - Tabla por grupo",
-            "2 - Resultados Jornada",
-            "3 - Partidos pendientes",
-            "4 - Estadísticas por equipo",
-            "5 - Clasificados a Eliminatorias"
+        ttk.Label(select_win, text="Seleccione el tipo de informe que desea generar:",
+                  style="Header.TLabel").pack(pady=10)
+
+        opciones = [
+            ("1 - Partidos por Fecha",
+             "Muestra todos los partidos de esa fecha (fase de grupos y eliminatorias)."),
+            ("2 - Tabla del Grupo a una Fecha",
+             "Muestra la tabla de posiciones de un grupo específico hasta una fecha dada."),
+            ("3 - Recorrido del País hasta una Fecha",
+             "Muestra todos los partidos jugados por un país hasta una fecha."),
+            ("4 - Partido más cercano del País a una Fecha",
+             "Muestra el partido más cercano (por fecha) de ese país, con horario y fase."),
+            ("5 - Todas las Tablas a una Fecha",
+             "Muestra la tabla completa de todos los grupos hasta esa fecha.")
         ]
-        rpt_var = tk.StringVar(value=reports[0])
-        lb = tk.Listbox(left, listvariable=tk.StringVar(value=reports), height=len(reports))
-        lb.pack(fill='y')
-        # display area
-        right = ttk.Frame(container); right.pack(side='right', fill='both', expand=True)
-        cols = ("A","B")  # placeholder
-        tree = ttk.Treeview(right, show='headings'); tree.pack(fill='both', expand=True)
 
-        # controls for auxiliary selection
-        ctrl = ttk.Frame(left); ctrl.pack(fill='x', pady=8)
-        ttk.Label(ctrl, text="Jornada:").pack(side='left')
-        jornada_spin = ttk.Spinbox(ctrl, from_=1, to=self.max_jornada, width=4); jornada_spin.set(str(self.current_jornada))
-        jornada_spin.pack(side='left', padx=4)
-        ttk.Label(ctrl, text="Grupo:").pack(side='left', padx=(8,0))
-        groups = sorted(set(e.grupo for e in self.torneo.equipos.values()))
-        grp_cb = ttk.Combobox(ctrl, values=groups, state='readonly'); grp_cb.set(groups[0] if groups else "")
-        grp_cb.pack(side='left', padx=4)
+        informe_var = tk.StringVar(value=opciones[0][0])
+
+        frame_radios = ttk.Frame(select_win, padding=10)
+        frame_radios.pack(fill='x')
+
+        for val, desc in opciones:
+            rb = ttk.Radiobutton(frame_radios, text=val, variable=informe_var, value=val)
+            rb.pack(anchor='w', pady=4)
+            ttk.Label(frame_radios, text=desc, wraplength=600).pack(anchor='w', padx=30)
+
+        def continuar():
+            tipo = informe_var.get()[0]
+            select_win.destroy()
+            self._abrir_informe_detallado(int(tipo))
+
+        ttk.Button(select_win, text="Continuar", command=continuar).pack(pady=12)
+        ttk.Button(select_win, text="Cancelar", command=select_win.destroy).pack()
+
+    # ---------- SEGUNDA VENTANA ----------
+    def _abrir_informe_detallado(self, tipo):
+        """
+        Abre la ventana de entrada de datos según el tipo de informe seleccionado.
+        """
+        win = tk.Toplevel(self.master)
+        win.title(f"Informe {tipo}")
+        win.geometry("1000x600")
+        win.transient(self.master)
+        win.grab_set()
+
+        container = ttk.Frame(win, padding=8)
+        container.pack(fill='both', expand=True)
+
+        left = ttk.Frame(container)
+        left.pack(side='left', fill='y', padx=(0, 10))
+        right = ttk.Frame(container)
+        right.pack(side='right', fill='both', expand=True)
+
+        ttk.Label(left, text=f"Informe {tipo}", style="Header.TLabel").pack(anchor='w', pady=(0, 10))
+
+        frm_inputs = ttk.Frame(left)
+        frm_inputs.pack(fill='x', pady=10)
+
+        ttk.Label(frm_inputs, text="Fecha (dd/mm/aaaa):").grid(row=0, column=0, sticky='w', pady=3)
+        fecha_entry = ttk.Entry(frm_inputs, width=16)
+        fecha_entry.grid(row=0, column=1, sticky='w')
+
+        ttk.Label(frm_inputs, text="Grupo:").grid(row=1, column=0, sticky='w', pady=3)
+        grupos = sorted(set(e.grupo for e in self.torneo.equipos.values() if e.grupo))
+        grupo_cb = ttk.Combobox(frm_inputs, values=grupos, state='readonly', width=6)
+        if grupos:
+            grupo_cb.set(grupos[0])
+        grupo_cb.grid(row=1, column=1, sticky='w')
+
+        ttk.Label(frm_inputs, text="País:").grid(row=2, column=0, sticky='w', pady=3)
+        paises = sorted(e.pais for e in self.torneo.equipos.values())
+        pais_cb = ttk.Combobox(frm_inputs, values=paises, state='readonly', width=24)
+        if paises:
+            pais_cb.set(paises[0])
+        pais_cb.grid(row=2, column=1, sticky='w')
+
+        # Deshabilitar campos según tipo
+        def ajustar_campos():
+            fecha_entry.config(state='disabled')
+            grupo_cb.config(state='disabled')
+            pais_cb.config(state='disabled')
+            if tipo in (1, 5):
+                fecha_entry.config(state='normal')
+            elif tipo == 2:
+                fecha_entry.config(state='normal')
+                grupo_cb.config(state='normal')
+            elif tipo in (3, 4):
+                fecha_entry.config(state='normal')
+                pais_cb.config(state='normal')
+        ajustar_campos()
+
+        ttk.Button(left, text="Generar Informe", command=lambda: generar()).pack(pady=10, fill='x')
+
+        tree = ttk.Treeview(right, show='headings')
+        tree.pack(fill='both', expand=True)
 
         def clear_tree(columns):
             tree.delete(*tree.get_children())
             tree["columns"] = columns
             for c in columns:
                 tree.heading(c, text=c)
-                tree.column(c, width=120, anchor='center')
+                tree.column(c, anchor='center', width=120)
 
-        def load_report(event=None):
-            sel_idx = lb.curselection()
-            if not sel_idx:
-                report = reports[0]
-            else:
-                report = reports[sel_idx[0]]
-            if report.startswith("1"):
-                # Tabla por grupo (usa grupo seleccionado)
-                g = grp_cb.get()
-                if not g:
-                    messagebox.showwarning("Seleccionar grupo", "Seleccione un grupo en el control izquierdo.")
-                    return
-                cols = ("Pos","Abrev","Equipo","PJ","G","E","P","GF","GC","DG","Pts")
-                clear_tree(cols)
-                tabla = self.torneo.calcular_tabla_posiciones(g)
-                for i,t in enumerate(tabla, start=1):
-                    tree.insert("", tk.END, values=(i,t.abreviatura,t.pais,t.stats['PJ'],t.stats['G'],t.stats['E'],t.stats['P'],t.stats['GF'],t.stats['GC'],t.stats['DG'],t.stats['Pts']))
-            elif report.startswith("2"):
-                # Resultados Jornada
-                j = int(jornada_spin.get())
-                cols = ("Grupo","Equipo1","Abrev1","G1","vs","G2","Abrev2","Equipo2")
-                clear_tree(cols)
-                for m in self.generated_matches:
-                    if m['Jornada'] != j: continue
-                    g = m['Grupo']; e1 = m['Equipo1']; e2 = m['Equipo2']
-                    pos1 = self.assigned_groups[g].index(e1)+1; pos2 = self.assigned_groups[g].index(e2)+1
-                    id1 = f"{g}{pos1}"; id2 = f"{g}{pos2}"
-                    p = None
-                    # find partido
-                    for mid,part in self.torneo.calendario.items():
-                        if (part.id_equipo1==id1 and part.id_equipo2==id2) or (part.id_equipo1==id2 and part.id_equipo2==id1):
-                            p = part; break
-                    if p:
-                        # Determine mapping to display correct G1/G2 relative to e1/e2
-                        if p.id_equipo1 == id1:
-                            g1 = p.goles_e1 if p.goles_e1 is not None else ""
-                            g2 = p.goles_e2 if p.goles_e2 is not None else ""
-                        else:
-                            g1 = p.goles_e2 if p.goles_e2 is not None else ""
-                            g2 = p.goles_e1 if p.goles_e1 is not None else ""
-                    else:
-                        g1 = ""; g2 = ""
-                    ab1 = self._get_abbr_by_pais(e1); ab2 = self._get_abbr_by_pais(e2)
-                    tree.insert("", tk.END, values=(g,e1,ab1,g1,"vs",g2,ab2,e2))
-            elif report.startswith("3"):
-                # Partidos pendientes
-                cols = ("ID","Grupo","Equipo1","Abrev1","Equipo2","Abrev2")
-                clear_tree(cols)
-                for mid,p in self.torneo.calendario.items():
-                    if p.goles_e1 is None or p.goles_e2 is None:
-                        e1 = self.torneo.equipos.get(p.id_equipo1).pais; e2 = self.torneo.equipos.get(p.id_equipo2).pais
-                        ab1 = self.torneo.equipos.get(p.id_equipo1).abreviatura; ab2 = self.torneo.equipos.get(p.id_equipo2).abreviatura
-                        tree.insert("", tk.END, values=(mid,p.fase,e1,ab1,e2,ab2))
-            elif report.startswith("4"):
-                # Estadísticas por equipo (global)
-                cols = ("ID","Abrev","Equipo","Grupo","PJ","G","E","P","GF","GC","DG","Pts")
-                clear_tree(cols)
-                for id,e in sorted(self.torneo.equipos.items()):
-                    t = e
-                    tree.insert("", tk.END, values=(id,t.abreviatura,t.pais,t.grupo,t.stats['PJ'],t.stats['G'],t.stats['E'],t.stats['P'],t.stats['GF'],t.stats['GC'],t.stats['DG'],t.stats['Pts']))
-            else:
-                # Clasificados a Eliminatorias: top2 por grupo + mejores 3os (4)
-                cols = ("Tipo","Abrev","Equipo","Grupo","Pts","DG","GF")
-                clear_tree(cols)
-                groups = sorted(set(e.grupo for e in self.torneo.equipos.values()))
-                firsts=[]; seconds=[]; thirds=[]
-                for g in groups:
-                    tabla = self.torneo.calcular_tabla_posiciones(g)
-                    if len(tabla) >= 1: firsts.append(tabla[0])
-                    if len(tabla) >= 2: seconds.append(tabla[1])
-                    if len(tabla) >= 3: thirds.append(tabla[2])
-                for t in firsts:
-                    tree.insert("", tk.END, values=("1º", t.abreviatura, t.pais, t.grupo, t.stats['Pts'], t.stats['DG'], t.stats['GF']))
-                for t in seconds:
-                    tree.insert("", tk.END, values=("2º", t.abreviatura, t.pais, t.grupo, t.stats['Pts'], t.stats['DG'], t.stats['GF']))
-                thirds_sorted = sorted(thirds, key=lambda t: (t.stats['Pts'], t.stats['DG'], t.stats['GF']), reverse=True)
-                for i,t in enumerate(thirds_sorted[:4], start=1):
-                    tree.insert("", tk.END, values=(f"3º (mejor {i})", t.abreviatura, t.pais, t.grupo, t.stats['Pts'], t.stats['DG'], t.stats['GF']))
+        def generar():
+            fecha_str = fecha_entry.get().strip()
+            grupo = grupo_cb.get().strip()
+            pais = pais_cb.get().strip()
+            fecha = self._parse_date_strict(fecha_str) if fecha_str else None
 
-        lb.bind("<<ListboxSelect>>", load_report)
-        # initial load
-        load_report()
+            # --- Validaciones según tipo ---
+            if tipo in (1, 2, 3, 4, 5) and not fecha:
+                messagebox.showwarning("Fecha requerida", "Debe ingresar una fecha válida.")
+                return
 
+            if tipo == 2 and not grupo:
+                messagebox.showwarning("Grupo requerido", "Debe seleccionar un grupo.")
+                return
+
+            if tipo in (3, 4) and not pais:
+                messagebox.showwarning("País requerido", "Debe seleccionar un país.")
+                return
+
+            # --- Ejecución de informes ---
+            if tipo == 1:
+                self._informe_partidos_por_fecha(tree, fecha)
+            elif tipo == 2:
+                self._informe_tabla_grupo_fecha(tree, grupo, fecha)
+            elif tipo == 3:
+                self._informe_recorrido_pais(tree, pais, fecha)
+            elif tipo == 4:
+                self._informe_partido_mas_cercano(tree, pais, fecha)
+            elif tipo == 5:
+                self._informe_todas_tablas_fecha(tree, fecha)
+
+    
     def _get_abbr_by_pais(self, pais):
         for id,e in self.torneo.equipos.items():
             if e.pais == pais:
                 return e.abreviatura
         return pais[:3].upper() if pais else ""
-
