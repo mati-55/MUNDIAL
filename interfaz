@@ -18,34 +18,45 @@ class AppTorneo:
     def __init__(self, root):
         self.root = root
         self.root.title("Copa del Mundo Sub-20 | Chile 2025")
-        self.root.geometry("900x600")
+        self.root.geometry("950x620")
         self.root.configure(bg="#1b1b1b")
 
         # Datos del torneo
         self.datos = cargar_datos()
 
-        # Fases del torneo
+        # Fases del torneo (para el apartado de partidos)
         self.fases = ["Fase de Grupos", "Octavos de Final", "Cuartos de Final", "Semifinales", "Final"]
 
-        # Interfaz general
+        # Crear interfaz
         self.crear_panel_lateral()
         self.crear_area_principal()
 
+        # Mostrar por defecto el inicio
+        self.mostrar_inicio()
+
     # -----------------------------
-    # 🔹 Panel lateral con fases
+    # 🔹 Panel lateral con secciones
     # -----------------------------
     def crear_panel_lateral(self):
-        self.panel_lateral = tk.Frame(self.root, bg="#121212", width=200)
+        self.panel_lateral = tk.Frame(self.root, bg="#121212", width=220)
         self.panel_lateral.pack(side="left", fill="y")
 
-        titulo = tk.Label(self.panel_lateral, text="Fases", fg="white", bg="#121212",
-                          font=("Segoe UI", 14, "bold"), pady=15)
+        titulo = tk.Label(self.panel_lateral, text="⚽ Copa Sub-20", fg="white", bg="#121212",
+                          font=("Segoe UI", 15, "bold"), pady=15)
         titulo.pack()
 
-        for fase in self.fases:
+        botones = [
+            ("🏠 Inicio", self.mostrar_inicio),
+            ("🏆 Partidos", self.mostrar_fases),
+            ("📊 Tabla de Posiciones", self.mostrar_tabla_posiciones),
+            ("📋 Informes / Estadísticas", self.mostrar_informes),
+            ("⚙️ Configuración", self.mostrar_configuracion)
+        ]
+
+        for texto, comando in botones:
             boton = tk.Button(
                 self.panel_lateral,
-                text=fase,
+                text=texto,
                 font=("Segoe UI", 11),
                 bg="#1f1f1f",
                 fg="white",
@@ -55,9 +66,9 @@ class AppTorneo:
                 padx=10,
                 pady=10,
                 anchor="w",
-                command=lambda f=fase: self.mostrar_partidos(f)
+                command=comando
             )
-            boton.pack(fill="x", pady=2)
+            boton.pack(fill="x", pady=3)
 
     # -----------------------------
     # 🔹 Área principal
@@ -66,25 +77,51 @@ class AppTorneo:
         self.area_principal = tk.Frame(self.root, bg="#1b1b1b")
         self.area_principal.pack(side="right", fill="both", expand=True)
 
-        self.titulo_fase = tk.Label(self.area_principal, text="Seleccione una fase",
-                                    bg="#1b1b1b", fg="white",
-                                    font=("Segoe UI", 16, "bold"))
-        self.titulo_fase.pack(pady=20)
+    def limpiar_area(self):
+        for widget in self.area_principal.winfo_children():
+            widget.destroy()
+
+    # -----------------------------
+    # 🏠 INICIO
+    # -----------------------------
+    def mostrar_inicio(self):
+        self.limpiar_area()
+        tk.Label(self.area_principal, text="Bienvenido a la Copa del Mundo Sub-20 (Chile 2025)",
+                 bg="#1b1b1b", fg="white", font=("Segoe UI", 16, "bold")).pack(pady=25)
+
+        tk.Label(self.area_principal, text="Visualiza los partidos, las fases, estadísticas y la tabla de posiciones en un solo lugar.",
+                 bg="#1b1b1b", fg="gray", font=("Segoe UI", 12), wraplength=600, justify="center").pack(pady=15)
+
+        tk.Label(self.area_principal, text="Selecciona una sección del panel lateral para comenzar.",
+                 bg="#1b1b1b", fg="#00bfff", font=("Segoe UI", 12, "italic")).pack(pady=20)
+
+    # -----------------------------
+    # 🏆 PARTIDOS (por fase)
+    # -----------------------------
+    def mostrar_fases(self):
+        self.limpiar_area()
+
+        titulo = tk.Label(self.area_principal, text="Partidos del Torneo",
+                          bg="#1b1b1b", fg="white", font=("Segoe UI", 16, "bold"))
+        titulo.pack(pady=15)
+
+        frame_botones = tk.Frame(self.area_principal, bg="#1b1b1b")
+        frame_botones.pack(pady=10)
+
+        for fase in self.fases:
+            btn = tk.Button(frame_botones, text=fase, font=("Segoe UI", 10),
+                            bg="#2a2a2a", fg="white", activebackground="#00bfff",
+                            activeforeground="white", bd=0, padx=10, pady=5,
+                            command=lambda f=fase: self.mostrar_partidos(f))
+            btn.pack(side="left", padx=6)
 
         self.frame_partidos = tk.Frame(self.area_principal, bg="#1b1b1b")
-        self.frame_partidos.pack(fill="both", expand=True)
+        self.frame_partidos.pack(fill="both", expand=True, pady=10)
 
-    # -----------------------------
-    # 🔹 Mostrar partidos por fase
-    # -----------------------------
     def mostrar_partidos(self, fase):
-        # Limpiar área
         for widget in self.frame_partidos.winfo_children():
             widget.destroy()
 
-        self.titulo_fase.config(text=fase)
-
-        # Filtrar partidos de la fase
         partidos = [p for p in self.datos["calendario"].values() if p["fase"] == fase]
 
         if not partidos:
@@ -95,48 +132,84 @@ class AppTorneo:
         for partido in partidos:
             self.mostrar_tarjeta_partido(partido)
 
-    # -----------------------------
-    # 🔹 Tarjeta visual de partido
-    # -----------------------------
     def mostrar_tarjeta_partido(self, partido):
-        equipo1 = self.datos["equipos"][partido["equipo1"]]
-        equipo2 = self.datos["equipos"][partido["equipo2"]]
+        equipos = self.datos["equipos"]
+        e1 = equipos[partido["equipo1"]]
+        e2 = equipos[partido["equipo2"]]
 
-        contenedor = tk.Frame(self.frame_partidos, bg="#262626", pady=10, padx=15)
-        contenedor.pack(pady=8, padx=25, fill="x")
+        card = tk.Frame(self.frame_partidos, bg="#262626", pady=10, padx=15)
+        card.pack(pady=8, padx=25, fill="x")
 
-        # Banderas y nombres
         try:
-            bandera1 = Image.open(equipo1["bandera"]).resize((64, 40))
-            bandera2 = Image.open(equipo2["bandera"]).resize((64, 40))
-            img1 = ImageTk.PhotoImage(bandera1)
-            img2 = ImageTk.PhotoImage(bandera2)
+            b1 = ImageTk.PhotoImage(Image.open(e1["bandera"]).resize((64, 40)))
+            b2 = ImageTk.PhotoImage(Image.open(e2["bandera"]).resize((64, 40)))
         except:
-            img1 = img2 = None
+            b1 = b2 = None
 
-        lbl_band1 = tk.Label(contenedor, image=img1, bg="#262626")
-        lbl_band1.image = img1
-        lbl_band1.grid(row=0, column=0, padx=10)
+        lbl1 = tk.Label(card, image=b1, bg="#262626")
+        lbl1.image = b1
+        lbl1.grid(row=0, column=0, padx=10)
+        tk.Label(card, text=e1["pais"], bg="#262626", fg="white", font=("Segoe UI", 12)).grid(row=0, column=1)
 
-        lbl_e1 = tk.Label(contenedor, text=equipo1["pais"], fg="white", bg="#262626", font=("Segoe UI", 12))
-        lbl_e1.grid(row=0, column=1, padx=5)
+        tk.Label(card, text=partido["resultado"], bg="#262626", fg="#00bfff", font=("Segoe UI", 13, "bold")).grid(row=0, column=2, padx=30)
 
-        lbl_vs = tk.Label(contenedor, text=f"{partido['resultado']}", fg="#00bfff", bg="#262626", font=("Segoe UI", 13, "bold"))
-        lbl_vs.grid(row=0, column=2, padx=25)
+        tk.Label(card, text=e2["pais"], bg="#262626", fg="white", font=("Segoe UI", 12)).grid(row=0, column=3)
+        lbl2 = tk.Label(card, image=b2, bg="#262626")
+        lbl2.image = b2
+        lbl2.grid(row=0, column=4, padx=10)
 
-        lbl_e2 = tk.Label(contenedor, text=equipo2["pais"], fg="white", bg="#262626", font=("Segoe UI", 12))
-        lbl_e2.grid(row=0, column=3, padx=5)
+        tk.Label(card, text=f"📅 {partido['fecha']}  🕓 {partido['hora']}", bg="#262626", fg="gray",
+                 font=("Segoe UI", 10)).grid(row=1, column=0, columnspan=5, pady=5)
 
-        lbl_band2 = tk.Label(contenedor, image=img2, bg="#262626")
-        lbl_band2.image = img2
-        lbl_band2.grid(row=0, column=4, padx=10)
+    # -----------------------------
+    # 📊 TABLA DE POSICIONES
+    # -----------------------------
+    def mostrar_tabla_posiciones(self):
+        self.limpiar_area()
 
-        lbl_info = tk.Label(contenedor, text=f"📅 {partido['fecha']}  🕓 {partido['hora']}",
-                            fg="gray", bg="#262626", font=("Segoe UI", 10))
-        lbl_info.grid(row=1, column=0, columnspan=5, pady=5)
+        tk.Label(self.area_principal, text="Tabla de Posiciones",
+                 bg="#1b1b1b", fg="white", font=("Segoe UI", 16, "bold")).pack(pady=15)
+
+        tabla = ttk.Treeview(self.area_principal, columns=("Equipo", "PJ", "G", "E", "P", "Pts"), show="headings")
+        tabla.pack(fill="both", expand=True, padx=30, pady=10)
+
+        for col in ("Equipo", "PJ", "G", "E", "P", "Pts"):
+            tabla.heading(col, text=col)
+            tabla.column(col, anchor="center", width=100)
+
+        # Ejemplo temporal
+        datos = [("Argentina", 3, 2, 1, 0, 7),
+                 ("Brasil", 3, 2, 0, 1, 6),
+                 ("Francia", 3, 1, 1, 1, 4)]
+        for fila in datos:
+            tabla.insert("", "end", values=fila)
+
+    # -----------------------------
+    # 📋 INFORMES / ESTADÍSTICAS
+    # -----------------------------
+    def mostrar_informes(self):
+        self.limpiar_area()
+
+        tk.Label(self.area_principal, text="Informes y Estadísticas",
+                 bg="#1b1b1b", fg="white", font=("Segoe UI", 16, "bold")).pack(pady=20)
+
+        tk.Label(self.area_principal, text="Sección en desarrollo: aquí se mostrarán tarjetas, goles, y rendimiento de equipos.",
+                 bg="#1b1b1b", fg="gray", font=("Segoe UI", 12), wraplength=600, justify="center").pack(pady=15)
+
+    # -----------------------------
+    # ⚙️ CONFIGURACIÓN
+    # -----------------------------
+    def mostrar_configuracion(self):
+        self.limpiar_area()
+
+        tk.Label(self.area_principal, text="Configuración del Torneo",
+                 bg="#1b1b1b", fg="white", font=("Segoe UI", 16, "bold")).pack(pady=20)
+
+        tk.Label(self.area_principal, text="Aquí podrás ajustar opciones generales, recargar datos o cambiar vistas.",
+                 bg="#1b1b1b", fg="gray", font=("Segoe UI", 12), wraplength=600, justify="center").pack(pady=15)
 
 # ==============================
-# 🔹 Ejecución principal
+# 🔹 Ejecutar
 # ==============================
 if __name__ == "__main__":
     root = tk.Tk()
