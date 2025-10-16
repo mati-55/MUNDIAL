@@ -113,34 +113,63 @@ class EliminationUI:
         # show matches that have p.fase == phase
         for mid,p in self.torneo.calendario.items():
             if p.fase != phase: continue
-            e1 = self.torneo.equipos.get(p.id_equipo1).pais
-            e2 = self.torneo.equipos.get(p.id_equipo2).pais
+            e1 = self.torneo.equipos.get(p.id_equipo1).pais if p.id_equipo1 in self.torneo.equipos else p.id_equipo1
+            e2 = self.torneo.equipos.get(p.id_equipo2).pais if p.id_equipo2 in self.torneo.equipos else p.id_equipo2
             res = f"{p.goles_e1} : {p.goles_e2}" if p.goles_e1 is not None else "PENDIENTE"
             self.tree.insert("", tk.END, iid=mid, values=(mid,p.fase,e1,p.goles_e1 if p.goles_e1 is not None else "", "vs", p.goles_e2 if p.goles_e2 is not None else "", e2, res))
 
     def _on_double_click(self, event):
-        sel = self.tree.selection()
-        if not sel: return
-        mid = sel[0]; p = self.torneo.calendario.get(mid)
-        if not p: return
-        win = tk.Toplevel(self.master); win.title(f"Resultado {mid}")
-        win.geometry("360x140"); win.transient(self.master); win.grab_set()
-        e1 = ttk.Entry(win, width=6); e1.pack(pady=6)
-        e2 = ttk.Entry(win, width=6); e2.pack(pady=6)
+        item = self.tree.selection()
+        if not item:
+            return
+        mid = item[0]
+        p = self.torneo.calendario.get(mid)
+        if not p:
+            messagebox.showerror("Error", "No se encontró el partido seleccionado en el calendario interno.")
+            return
+
+        # create dialog
+        win = tk.Toplevel(self.master); win.title(f"Editar {mid}")
+        win.geometry("360x160"); win.transient(self.master); win.grab_set()
+
+        frm = ttk.Frame(win, padding=8); frm.pack(fill='both', expand=True)
+
+        # get team objects (fallback to id if missing)
+        e1_obj = self.torneo.equipos.get(p.id_equipo1)
+        e2_obj = self.torneo.equipos.get(p.id_equipo2)
+        e1_name = e1_obj.pais if e1_obj else p.id_equipo1
+        e2_name = e2_obj.pais if e2_obj else p.id_equipo2
+        e1_abbr = e1_obj.abreviatura if e1_obj and e1_obj.abreviatura else (e1_name[:3].upper() if e1_name else "")
+        e2_abbr = e2_obj.abreviatura if e2_obj and e2_obj.abreviatura else (e2_name[:3].upper() if e2_name else "")
+
+        # header showing both teams + abreviaturas
+        ttk.Label(frm, text=f"{e1_name} ({e1_abbr})  vs  {e2_name} ({e2_abbr})").pack(pady=(0,6))
+
+        row = ttk.Frame(frm); row.pack()
+        ttk.Label(row, text=f"Goles {e1_abbr}").pack(side='left', padx=6)
+        e1 = ttk.Entry(row, width=6); e1.pack(side='left')
+        ttk.Label(row, text=f"Goles {e2_abbr}").pack(side='left', padx=6)
+        e2 = ttk.Entry(row, width=6); e2.pack(side='left')
+
+        # prefill existing goles
         e1.insert(0, "" if p.goles_e1 is None else str(p.goles_e1))
         e2.insert(0, "" if p.goles_e2 is None else str(p.goles_e2))
+
         def save():
             try:
                 g1 = int(e1.get()); g2 = int(e2.get())
-            except:
+            except Exception:
                 messagebox.showerror("Error", "Goles deben ser enteros.")
                 return
             p.goles_e1 = g1; p.goles_e2 = g2
-            # recompute simple stats and save
+            # save and refresh
             self.torneo.guardar_datos()
             win.destroy()
             self.load_phase(self.current_phase)
-        ttk.Button(win, text="Guardar", command=save).pack(pady=8)
+            # show confirmation with team names
+            messagebox.showinfo("Resultado guardado", f"{e1_name} ({e1_abbr}) {g1} : {g2} {e2_name} ({e2_abbr})")
+
+        ttk.Button(frm, text="Guardar", command=save).pack(pady=8)
 
     def save_phase(self):
         # nothing extra needed: partidos ya guardados al editar. Save JSON and export excel
@@ -149,7 +178,8 @@ class EliminationUI:
         rows=[]
         for mid,p in self.torneo.calendario.items():
             if p.fase != self.current_phase: continue
-            e1 = self.torneo.equipos.get(p.id_equipo1).pais; e2 = self.torneo.equipos.get(p.id_equipo2).pais
+            e1 = self.torneo.equipos.get(p.id_equipo1).pais if p.id_equipo1 in self.torneo.equipos else p.id_equipo1
+            e2 = self.torneo.equipos.get(p.id_equipo2).pais if p.id_equipo2 in self.torneo.equipos else p.id_equipo2
             rows.append({'ID':mid,'Fase':p.fase,'Equipo1':e1,'G1':p.goles_e1,'G2':p.goles_e2,'Equipo2':e2})
         out = os.path.join(os.path.dirname(__file__), f"Resultados_{self.current_phase}.xlsx")
         try:
