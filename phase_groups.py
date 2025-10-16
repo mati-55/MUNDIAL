@@ -163,11 +163,11 @@ class PhaseGroupsUI:
             # show info summary about saved partido and group standings
             equipo1 = self.torneo.equipos.get(partido.id_equipo1)
             equipo2 = self.torneo.equipos.get(partido.id_equipo2)
-            partido_info = f"{equipo1.pais} ({equipo1.abreviatura}) {g1} : {g2} {equipo2.pais} ({equipo2.abreviatura})"
+            partido_info = f"{equipo1.pais}  {g1} : {g2}  {equipo2.pais}"
             # Show also updated mini tabla for this group
             grupo = equipo1.grupo
             tabla = self.torneo.calcular_tabla_posiciones(grupo)
-            tabla_txt = "\n".join([f"{i+1}. {t.abreviatura} {t.pais} - Pts:{t.stats['Pts']} GF:{t.stats['GF']} GC:{t.stats['GC']} DG:{t.stats['DG']}" for i,t in enumerate(tabla)])
+            abla_txt = "\n".join([f"{i+1} -{t.pais} - Pts:{t.stats['Pts']}" for i,t in enumerate(tabla)])
             messagebox.showinfo("Resultado guardado", f"Partido: {partido_info}\n\nTabla actualizada Grupo {grupo}:\n{tabla_txt}")
 
         ttk.Button(frm, text="Guardar", command=save).pack(pady=8)
@@ -427,3 +427,4 @@ class PhaseGroupsUI:
             if e.pais == pais:
                 return e.abreviatura
         return pais[:3].upper() if pais else ""
+
