@@ -1,217 +1,218 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
-import json
-import os
+import json, os
 
-# ==============================
-# 🔹 Cargar datos del torneo
-# ==============================
+# ==============================================================
+# 🔹 Cargar datos del torneo desde JSON
+# ==============================================================
 def cargar_datos():
+    if not os.path.exists("torneo_data.json"):
+        messagebox.showerror("Error", "No se encontró el archivo torneo_data.json")
+        return {}
     with open("torneo_data.json", "r", encoding="utf-8") as f:
         return json.load(f)
 
-# ==============================
+# ==============================================================
 # 🔹 Clase principal de la app
-# ==============================
-class AppTorneo:
+# ==============================================================
+class AppCopaSub20:
     def __init__(self, root):
         self.root = root
-        self.root.title("Copa del Mundo Sub-20 | Chile 2025")
-        self.root.geometry("950x620")
-        self.root.configure(bg="#1b1b1b")
+        self.root.title("Copa Mundial Sub-20 - Chile 2025")
+        self.root.geometry("1200x700")
+        self.root.config(bg="#0F172A")
 
-        # Datos del torneo
         self.datos = cargar_datos()
 
-        # Fases del torneo (para el apartado de partidos)
-        self.fases = ["Fase de Grupos", "Octavos de Final", "Cuartos de Final", "Semifinales", "Final"]
+        # =======================
+        # Panel lateral (menú)
+        # =======================
+        self.panel = tk.Frame(self.root, bg="#1E293B", width=220)
+        self.panel.pack(side="left", fill="y")
 
-        # Crear interfaz
-        self.crear_panel_lateral()
-        self.crear_area_principal()
-
-        # Mostrar por defecto el inicio
-        self.mostrar_inicio()
-
-    # -----------------------------
-    # 🔹 Panel lateral con secciones
-    # -----------------------------
-    def crear_panel_lateral(self):
-        self.panel_lateral = tk.Frame(self.root, bg="#121212", width=220)
-        self.panel_lateral.pack(side="left", fill="y")
-
-        titulo = tk.Label(self.panel_lateral, text="⚽ Copa Sub-20", fg="white", bg="#121212",
-                          font=("Segoe UI", 15, "bold"), pady=15)
-        titulo.pack()
+        titulo = tk.Label(self.panel, text="🏆 Copa Sub-20", bg="#1E293B",
+                          fg="white", font=("Arial", 16, "bold"))
+        titulo.pack(pady=25)
 
         botones = [
-            ("🏠 Inicio", self.mostrar_inicio),
-            ("🏆 Partidos", self.mostrar_fases),
-            ("📊 Tabla de Posiciones", self.mostrar_tabla_posiciones),
-            ("📋 Informes / Estadísticas", self.mostrar_informes),
-            ("⚙️ Configuración", self.mostrar_configuracion)
+            ("📅 Partidos", self.mostrar_partidos),
+            ("📊 Tabla", self.mostrar_tabla),
+            ("🔗 Llaves", self.mostrar_llaves),
+            ("📈 Estadísticas", self.mostrar_estadisticas),
+            ("📝 Informes", self.mostrar_informes),
+            ("⚙️ Configuración", self.mostrar_config)
         ]
 
         for texto, comando in botones:
-            boton = tk.Button(
-                self.panel_lateral,
-                text=texto,
-                font=("Segoe UI", 11),
-                bg="#1f1f1f",
-                fg="white",
-                activebackground="#2e2e2e",
-                activeforeground="#00bfff",
-                bd=0,
-                padx=10,
-                pady=10,
-                anchor="w",
-                command=comando
-            )
-            boton.pack(fill="x", pady=3)
+            tk.Button(self.panel, text=texto, bg="#334155", fg="white",
+                      font=("Arial", 12), relief="flat", cursor="hand2",
+                      command=comando, width=18, height=2).pack(pady=5)
 
-    # -----------------------------
-    # 🔹 Área principal
-    # -----------------------------
-    def crear_area_principal(self):
-        self.area_principal = tk.Frame(self.root, bg="#1b1b1b")
-        self.area_principal.pack(side="right", fill="both", expand=True)
+        # =======================
+        # Área principal
+        # =======================
+        self.area_principal = tk.Frame(self.root, bg="#0F172A")
+        self.area_principal.pack(side="right", expand=True, fill="both")
 
-    def limpiar_area(self):
+        self.mostrar_partidos()  # vista inicial
+
+    # ==============================================================
+    # 📅 Partidos
+    # ==============================================================
+    def mostrar_partidos(self):
+        self._limpiar_area()
+        tk.Label(self.area_principal, text="📅 Partidos del torneo",
+                 bg="#0F172A", fg="white", font=("Arial", 20, "bold")).pack(pady=15)
+
+        tree = ttk.Treeview(self.area_principal, columns=("Fecha", "Equipo 1", "Goles 1", "Goles 2", "Equipo 2"),
+                            show="headings", height=20)
+        for col in ("Fecha", "Equipo 1", "Goles 1", "Goles 2", "Equipo 2"):
+            tree.heading(col, text=col)
+            tree.column(col, width=150, anchor="center")
+        tree.pack(pady=15)
+
+        # Insertar datos
+        for partido in self.datos.get("partidos", []):
+            tree.insert("", "end", values=(
+                partido["fecha"],
+                partido["equipo1"],
+                partido.get("goles1", "-"),
+                partido.get("goles2", "-"),
+                partido["equipo2"]
+            ))
+
+    # ==============================================================
+    # 📊 Tabla de posiciones
+    # ==============================================================
+    def mostrar_tabla(self):
+        self._limpiar_area()
+        tk.Label(self.area_principal, text="📊 Tabla de Posiciones",
+                 bg="#0F172A", fg="white", font=("Arial", 20, "bold")).pack(pady=15)
+
+        tree = ttk.Treeview(self.area_principal,
+                            columns=("Grupo", "Equipo", "PJ", "G", "E", "P", "GF", "GC", "Pts"),
+                            show="headings", height=20)
+        for col in ("Grupo", "Equipo", "PJ", "G", "E", "P", "GF", "GC", "Pts"):
+            tree.heading(col, text=col)
+            tree.column(col, width=90, anchor="center")
+        tree.pack(pady=15)
+
+        for fila in self.datos.get("tabla", []):
+            tree.insert("", "end", values=(
+                fila["grupo"], fila["equipo"], fila["pj"], fila["g"],
+                fila["e"], fila["p"], fila["gf"], fila["gc"], fila["pts"]
+            ))
+
+    # ==============================================================
+    # 🔗 Llaves del torneo (automáticas)
+    # ==============================================================
+    def mostrar_llaves(self):
+        self._limpiar_area()
+        tk.Label(self.area_principal, text="🔗 Llaves del Torneo",
+                 bg="#0F172A", fg="white", font=("Arial", 20, "bold")).pack(pady=10)
+
+        canvas = tk.Canvas(self.area_principal, bg="#0F172A", highlightthickness=0)
+        canvas.pack(fill="both", expand=True)
+
+        llaves = self._generar_llaves()
+
+        x_pos = [80, 340, 600, 860]  # posiciones de columnas (octavos→final)
+        y_start = 80
+        box_w, box_h = 180, 40
+        espacio_y = 80
+
+        for ronda_i, ronda in enumerate(llaves):
+            for i, (e1, e2) in enumerate(ronda):
+                y = y_start + i * espacio_y * (2 ** ronda_i)
+                canvas.create_rectangle(x_pos[ronda_i], y, x_pos[ronda_i] + box_w, y + box_h, fill="#1E293B")
+                canvas.create_text(x_pos[ronda_i] + box_w/2, y + 12, text=e1, fill="white", font=("Arial", 10))
+                canvas.create_rectangle(x_pos[ronda_i], y + 45, x_pos[ronda_i] + box_w, y + 45 + box_h, fill="#1E293B")
+                canvas.create_text(x_pos[ronda_i] + box_w/2, y + 45 + 12, text=e2, fill="white", font=("Arial", 10))
+
+    def _generar_llaves(self):
+        """
+        Genera automáticamente las llaves según los datos del torneo.
+        Simplificado: toma los 2 primeros de cada grupo para formar octavos.
+        """
+        grupos = {}
+        for fila in self.datos.get("tabla", []):
+            g = fila["grupo"]
+            if g not in grupos:
+                grupos[g] = []
+            grupos[g].append(fila)
+
+        # Ordenar equipos de cada grupo
+        for g in grupos:
+            grupos[g].sort(key=lambda x: x["pts"], reverse=True)
+
+        clasificados = []
+        for g in grupos:
+            clasificados.append(grupos[g][0]["equipo"])
+            clasificados.append(grupos[g][1]["equipo"])
+
+        # Cruces según patrón FIFA (ejemplo Sub-20)
+        octavos = [
+            (clasificados[0], clasificados[15]),
+            (clasificados[7], clasificados[8]),
+            (clasificados[3], clasificados[12]),
+            (clasificados[4], clasificados[11]),
+            (clasificados[1], clasificados[14]),
+            (clasificados[6], clasificados[9]),
+            (clasificados[2], clasificados[13]),
+            (clasificados[5], clasificados[10])
+        ]
+
+        # Rondas vacías (de momento sin simulación)
+        cuartos = [("Ganador O1", "Ganador O2"), ("Ganador O3", "Ganador O4"),
+                   ("Ganador O5", "Ganador O6"), ("Ganador O7", "Ganador O8")]
+        semis = [("Ganador C1", "Ganador C2"), ("Ganador C3", "Ganador C4")]
+        final = [("Ganador S1", "Ganador S2")]
+
+        return [octavos, cuartos, semis, final]
+
+    # ==============================================================
+    # 📈 Estadísticas
+    # ==============================================================
+    def mostrar_estadisticas(self):
+        self._limpiar_area()
+        tk.Label(self.area_principal, text="📈 Estadísticas del Torneo",
+                 bg="#0F172A", fg="white", font=("Arial", 20, "bold")).pack(pady=20)
+        tk.Label(self.area_principal, text="(En desarrollo... incluir goleadores, tarjetas, etc.)",
+                 bg="#0F172A", fg="#CBD5E1", font=("Arial", 12)).pack(pady=10)
+
+    # ==============================================================
+    # 📝 Informes
+    # ==============================================================
+    def mostrar_informes(self):
+        self._limpiar_area()
+        tk.Label(self.area_principal, text="📝 Informes",
+                 bg="#0F172A", fg="white", font=("Arial", 20, "bold")).pack(pady=20)
+        tk.Label(self.area_principal, text="(En desarrollo... incluir reportes personalizados del torneo)",
+                 bg="#0F172A", fg="#CBD5E1", font=("Arial", 12)).pack(pady=10)
+
+    # ==============================================================
+    # ⚙️ Configuración
+    # ==============================================================
+    def mostrar_config(self):
+        self._limpiar_area()
+        tk.Label(self.area_principal, text="⚙️ Configuración",
+                 bg="#0F172A", fg="white", font=("Arial", 20, "bold")).pack(pady=20)
+        tk.Label(self.area_principal, text="(Opciones de idioma, tema visual, etc.)",
+                 bg="#0F172A", fg="#CBD5E1", font=("Arial", 12)).pack(pady=10)
+
+    # ==============================================================
+    # 🧹 Limpiar área principal
+    # ==============================================================
+    def _limpiar_area(self):
         for widget in self.area_principal.winfo_children():
             widget.destroy()
 
-    # -----------------------------
-    # 🏠 INICIO
-    # -----------------------------
-    def mostrar_inicio(self):
-        self.limpiar_area()
-        tk.Label(self.area_principal, text="Bienvenido a la Copa del Mundo Sub-20 (Chile 2025)",
-                 bg="#1b1b1b", fg="white", font=("Segoe UI", 16, "bold")).pack(pady=25)
 
-        tk.Label(self.area_principal, text="Visualiza los partidos, las fases, estadísticas y la tabla de posiciones en un solo lugar.",
-                 bg="#1b1b1b", fg="gray", font=("Segoe UI", 12), wraplength=600, justify="center").pack(pady=15)
-
-        tk.Label(self.area_principal, text="Selecciona una sección del panel lateral para comenzar.",
-                 bg="#1b1b1b", fg="#00bfff", font=("Segoe UI", 12, "italic")).pack(pady=20)
-
-    # -----------------------------
-    # 🏆 PARTIDOS (por fase)
-    # -----------------------------
-    def mostrar_fases(self):
-        self.limpiar_area()
-
-        titulo = tk.Label(self.area_principal, text="Partidos del Torneo",
-                          bg="#1b1b1b", fg="white", font=("Segoe UI", 16, "bold"))
-        titulo.pack(pady=15)
-
-        frame_botones = tk.Frame(self.area_principal, bg="#1b1b1b")
-        frame_botones.pack(pady=10)
-
-        for fase in self.fases:
-            btn = tk.Button(frame_botones, text=fase, font=("Segoe UI", 10),
-                            bg="#2a2a2a", fg="white", activebackground="#00bfff",
-                            activeforeground="white", bd=0, padx=10, pady=5,
-                            command=lambda f=fase: self.mostrar_partidos(f))
-            btn.pack(side="left", padx=6)
-
-        self.frame_partidos = tk.Frame(self.area_principal, bg="#1b1b1b")
-        self.frame_partidos.pack(fill="both", expand=True, pady=10)
-
-    def mostrar_partidos(self, fase):
-        for widget in self.frame_partidos.winfo_children():
-            widget.destroy()
-
-        partidos = [p for p in self.datos["calendario"].values() if p["fase"] == fase]
-
-        if not partidos:
-            tk.Label(self.frame_partidos, text="No hay partidos en esta fase.",
-                     bg="#1b1b1b", fg="gray", font=("Segoe UI", 12)).pack(pady=20)
-            return
-
-        for partido in partidos:
-            self.mostrar_tarjeta_partido(partido)
-
-    def mostrar_tarjeta_partido(self, partido):
-        equipos = self.datos["equipos"]
-        e1 = equipos[partido["equipo1"]]
-        e2 = equipos[partido["equipo2"]]
-
-        card = tk.Frame(self.frame_partidos, bg="#262626", pady=10, padx=15)
-        card.pack(pady=8, padx=25, fill="x")
-
-        try:
-            b1 = ImageTk.PhotoImage(Image.open(e1["bandera"]).resize((64, 40)))
-            b2 = ImageTk.PhotoImage(Image.open(e2["bandera"]).resize((64, 40)))
-        except:
-            b1 = b2 = None
-
-        lbl1 = tk.Label(card, image=b1, bg="#262626")
-        lbl1.image = b1
-        lbl1.grid(row=0, column=0, padx=10)
-        tk.Label(card, text=e1["pais"], bg="#262626", fg="white", font=("Segoe UI", 12)).grid(row=0, column=1)
-
-        tk.Label(card, text=partido["resultado"], bg="#262626", fg="#00bfff", font=("Segoe UI", 13, "bold")).grid(row=0, column=2, padx=30)
-
-        tk.Label(card, text=e2["pais"], bg="#262626", fg="white", font=("Segoe UI", 12)).grid(row=0, column=3)
-        lbl2 = tk.Label(card, image=b2, bg="#262626")
-        lbl2.image = b2
-        lbl2.grid(row=0, column=4, padx=10)
-
-        tk.Label(card, text=f"📅 {partido['fecha']}  🕓 {partido['hora']}", bg="#262626", fg="gray",
-                 font=("Segoe UI", 10)).grid(row=1, column=0, columnspan=5, pady=5)
-
-    # -----------------------------
-    # 📊 TABLA DE POSICIONES
-    # -----------------------------
-    def mostrar_tabla_posiciones(self):
-        self.limpiar_area()
-
-        tk.Label(self.area_principal, text="Tabla de Posiciones",
-                 bg="#1b1b1b", fg="white", font=("Segoe UI", 16, "bold")).pack(pady=15)
-
-        tabla = ttk.Treeview(self.area_principal, columns=("Equipo", "PJ", "G", "E", "P", "Pts"), show="headings")
-        tabla.pack(fill="both", expand=True, padx=30, pady=10)
-
-        for col in ("Equipo", "PJ", "G", "E", "P", "Pts"):
-            tabla.heading(col, text=col)
-            tabla.column(col, anchor="center", width=100)
-
-        # Ejemplo temporal
-        datos = [("Argentina", 3, 2, 1, 0, 7),
-                 ("Brasil", 3, 2, 0, 1, 6),
-                 ("Francia", 3, 1, 1, 1, 4)]
-        for fila in datos:
-            tabla.insert("", "end", values=fila)
-
-    # -----------------------------
-    # 📋 INFORMES / ESTADÍSTICAS
-    # -----------------------------
-    def mostrar_informes(self):
-        self.limpiar_area()
-
-        tk.Label(self.area_principal, text="Informes y Estadísticas",
-                 bg="#1b1b1b", fg="white", font=("Segoe UI", 16, "bold")).pack(pady=20)
-
-        tk.Label(self.area_principal, text="Sección en desarrollo: aquí se mostrarán tarjetas, goles, y rendimiento de equipos.",
-                 bg="#1b1b1b", fg="gray", font=("Segoe UI", 12), wraplength=600, justify="center").pack(pady=15)
-
-    # -----------------------------
-    # ⚙️ CONFIGURACIÓN
-    # -----------------------------
-    def mostrar_configuracion(self):
-        self.limpiar_area()
-
-        tk.Label(self.area_principal, text="Configuración del Torneo",
-                 bg="#1b1b1b", fg="white", font=("Segoe UI", 16, "bold")).pack(pady=20)
-
-        tk.Label(self.area_principal, text="Aquí podrás ajustar opciones generales, recargar datos o cambiar vistas.",
-                 bg="#1b1b1b", fg="gray", font=("Segoe UI", 12), wraplength=600, justify="center").pack(pady=15)
-
-# ==============================
-# 🔹 Ejecutar
-# ==============================
+# ==============================================================
+# 🚀 Ejecutar la app
+# ==============================================================
 if __name__ == "__main__":
     root = tk.Tk()
-    app = AppTorneo(root)
+    AppCopaSub20(root)
     root.mainloop()
