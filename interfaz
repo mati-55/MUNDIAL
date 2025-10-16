@@ -1,0 +1,139 @@
+import http.server
+import socketserver
+import json
+import time
+import random
+import os
+
+# --- DATOS DE PARTIDOS DE EJEMPLO (FALLBACK) ---
+# Se usarán si no se encuentra el archivo 'torneo_data.json'
+mock_data = {
+    "futbol": [
+        { "id": 1, "league": 'La Liga', "teamA": 'Real Madrid', "teamB": 'FC Barcelona', "scoreA": 1, "scoreB": 1, "status": 'live', "time": '75\'', "logoA": 'https://placehold.co/64x64/ffffff/000000?text=RM', "logoB": 'https://placehold.co/64x64/A50044/ffffff?text=FCB' },
+        { "id": 2, "league": 'Premier League', "teamA": 'Man. United', "teamB": 'Liverpool', "scoreA": 0, "scoreB": 2, "status": 'live', "time": '52\'', "logoA": 'https://placehold.co/64x64/DA291C/ffffff?text=MU', "logoB": 'https://placehold.co/64x64/C8102E/ffffff?text=LFC' },
+    ],
+    "baloncesto": [
+        { "id": 5, "league": 'NBA', "teamA": 'Lakers', "teamB": 'Celtics', "scoreA": 102, "scoreB": 98, "status": 'live', "time": 'Q4 2:15', "logoA": 'https://placehold.co/64x64/552583/FDB927?text=LAL', "logoB": 'https://placehold.co/64x64/008348/000000?text=BOS' }
+    ],
+    "tenis": [
+        { "id": 7, "league": 'US Open', "teamA": 'Alcaraz', "teamB": 'Djokovic', "scoreA": 2, "scoreB": 1, "status": 'live', "time": 'Set 4', "sets": '(6-3, 4-6, 7-6)', "logoA": 'https://placehold.co/64x64/FFC400/000000?text=CA', "logoB": 'https://placehold.co/64x64/2E6DB4/ffffff?text=ND' }
+    ]
+}
+
+def update_mock_scores():
+    """Función para simular la actualización de marcadores (solo para datos de ejemplo)."""
+    for match in mock_data["futbol"]:
+        if match["status"] == 'live' and random.random() > 0.9:
+            match["scoreA"] += 1
+    # ... (se pueden agregar más lógicas de simulación aquí)
+
+
+def cargar_datos_reales():
+    """
+    Carga los datos desde torneo_data.json y los transforma al formato
+    que espera la interfaz web (frontend).
+    """
+    FILENAME = 'torneo_data.json'
+    if not os.path.exists(FILENAME):
+        print(f"ADVERTENCIA: No se encontró '{FILENAME}'. Se usarán los datos de ejemplo.")
+        update_mock_scores()
+        return mock_data
+
+    try:
+        with open(FILENAME, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        equipos = data.get('equipos', {})
+        calendario = data.get('calendario', {})
+        
+        partidos_futbol = []
+        # Ordenar partidos por su ID (M001, M002, etc.) para mantener consistencia
+        for match_id in sorted(calendario.keys()):
+            partido_data = calendario[match_id]
+            
+            id_equipo1 = partido_data.get('id_equipo1')
+            id_equipo2 = partido_data.get('id_equipo2')
+            
+            equipo1_obj = equipos.get(id_equipo1, {'pais': id_equipo1, 'abreviatura': '???_1'})
+            equipo2_obj = equipos.get(id_equipo2, {'pais': id_equipo2, 'abreviatura': '???_2'})
+            
+            goles1 = partido_data.get('goles_e1')
+            goles2 = partido_data.get('goles_e2')
+            
+            # Determinar estado del partido
+            if goles1 is None or goles2 is None:
+                status = 'upcoming'
+                time_str = partido_data.get('hora') or 'Pendiente'
+            else:
+                status = 'finished'
+                time_str = 'FT' # Full Time
+
+            partido_formateado = {
+                "id": match_id,
+                "league": partido_data.get('fase', 'Fase de Grupos'),
+                "teamA": equipo1_obj['pais'],
+                "teamB": equipo2_obj['pais'],
+                "scoreA": goles1 if goles1 is not None else 0,
+                "scoreB": goles2 if goles2 is not None else 0,
+                "status": status,
+                "time": time_str,
+                "logoA": f"https://placehold.co/64x64/374151/E5E7EB?text={equipo1_obj['abreviatura']}",
+                "logoB": f"https://placehold.co/64x64/374151/E5E7EB?text={equipo2_obj['abreviatura']}"
+            }
+            partidos_futbol.append(partido_formateado)
+            
+        return {
+            "futbol": partidos_futbol,
+            "baloncesto": [], # Tu app es solo de fútbol
+            "tenis": []
+        }
+
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"ERROR: No se pudo leer o procesar '{FILENAME}': {e}. Se usarán los datos de ejemplo.")
+        update_mock_scores()
+        return mock_data
+
+
+# Definimos el manejador de peticiones HTTP
+class MyHttpRequestHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        # Ruta para la API que devuelve los datos de los partidos
+        if self.path == '/api/matches':
+            # Cargar y formatear los datos reales del torneo
+            datos_para_enviar = cargar_datos_reales()
+            
+            # Preparar la respuesta JSON
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*') # Para evitar problemas de CORS
+            self.end_headers()
+            
+            # Convertir el diccionario de Python a una cadena JSON y codificarla a bytes
+            response_data = json.dumps(datos_para_enviar).encode('utf-8')
+            self.wfile.write(response_data)
+            return
+        
+        # Ruta para la página principal
+        if self.path == '/':
+            self.path = 'marcador_vivo.html'
+
+        # Para cualquier otra petición, usar el comportamiento por defecto (servir archivos)
+        return http.server.SimpleHTTPRequestHandler.do_GET(self)
+
+# Configuración del servidor
+PORT = 8000
+handler_object = MyHttpRequestHandler
+
+with socketserver.TCPServer(("", PORT), handler_object) as httpd:
+    print("*"*50)
+    print(f"Servidor iniciado en http://localhost:{PORT}")
+    print("Este servidor ahora lee los datos desde 'torneo_data.json'")
+    print("Asegúrate de ejecutar tu aplicación tkinter primero para generar ese archivo.")
+    print("Presiona Ctrl+C para detener el servidor.")
+    print("*"*50)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nDeteniendo el servidor.")
+        httpd.shutdown()
+
