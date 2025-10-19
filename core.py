@@ -178,6 +178,127 @@ class Torneo:
             partido.tarj_roja_e2 = p_data.get('tarj_roja_e2', 0)
             partido.jugador_stats = p_data.get('jugador_stats', [])
             self.calendario[id] = partido
+    # ============================================================
+    # 🔹 Obtener equipo por posición (para las llaves de eliminación)
+    # ============================================================
+    def obtener_equipo_por_posicion(self, posicion_str):
+        """
+        Devuelve el equipo correspondiente a un string como:
+        '1°A', '2°C', '3°B/E/F' según las tablas de posiciones actuales.
+        Si la posición contiene varias opciones (3°B/E/F), elige una al azar.
+        """
+        import random
+
+        if not posicion_str or len(posicion_str) < 3:
+            return None
+
+        try:
+            pos = int(posicion_str[0])  # 1, 2 o 3
+            grupos = []
+
+            partes = posicion_str.split("°")[-1]
+            if "/" in partes:
+                grupos = partes.split("/")
+            else:
+                grupos = [partes]
+
+            grupos = [g.strip() for g in grupos if g.strip().isalpha()]
+
+            if not grupos:
+                return None
+
+            grupo = random.choice(grupos)
+            tabla = self.calcular_tabla_posiciones(grupo)
+
+            if len(tabla) >= pos:
+                return tabla[pos - 1]  # Devuelve el objeto Equipo
+            return None
+        except Exception as e:
+            print("Error en obtener_equipo_por_posicion:", e)
+            return None
+
+    # ============================================================
+    # 🔹 Generar rondas de eliminación automáticamente
+    # ============================================================
+    def generar_rondas_eliminacion(self):
+        """
+        Genera automáticamente los partidos de las siguientes fases de eliminación
+        (Octavos → Cuartos → Semifinal → Final)
+        en base a los ganadores de los encuentros anteriores.
+        """
+        nuevas_rondas = []
+
+        # --- Orden de fases ---
+        fases_orden = ["Octavos de final", "Cuartos de final", "Semifinal", "Final"]
+
+        # Buscar la fase actual
+        fase_actual = None
+        for fase in fases_orden:
+            if any(p.fase == fase for p in self.calendario.values()):
+                fase_actual = fase
+                break
+
+        if not fase_actual:
+            print("⚠️ No hay fase de eliminación actual para avanzar.")
+            return
+
+        # --- Obtener ganadores ---
+        ganadores = []
+        for p in self.calendario.values():
+            if p.fase != fase_actual:
+                continue
+            if p.goles_e1 is None or p.goles_e2 is None:
+                continue
+            if p.goles_e1 > p.goles_e2:
+                ganadores.append(self.equipos[p.id_equipo1])
+            elif p.goles_e2 > p.goles_e1:
+                ganadores.append(self.equipos[p.id_equipo2])
+
+        if not ganadores:
+            print("⚠️ No hay ganadores aún en la fase actual.")
+            return
+
+        # --- Siguiente fase ---
+        idx = fases_orden.index(fase_actual)
+        if idx + 1 >= len(fases_orden):
+            print("🏁 El torneo ya llegó a la final.")
+            return
+
+        fase_siguiente = fases_orden[idx + 1]
+        print(f"➡️ Generando {fase_siguiente} con {len(ganadores)} equipos...")
+
+        # --- Crear nuevos partidos ---
+        for i in range(0, len(ganadores), 2):
+            if i + 1 < len(ganadores):
+                e1 = ganadores[i]
+                e2 = ganadores[i + 1]
+                nuevo_partido = Partido(e1.id_equipo1 if hasattr(e1, 'id_equipo1') else e1.identificador,
+                                        e2.id_equipo1 if hasattr(e2, 'id_equipo1') else e2.identificador,
+                                        fecha="", hora="", fase=fase_siguiente)
+                self.agregar_partido(nuevo_partido)
+                nuevas_rondas.append(nuevo_partido)
+
+        # Guardar resultados
+        if nuevas_rondas:
+            self.guardar_datos()
+            print(f"✅ {len(nuevas_rondas)} partidos creados para {fase_siguiente}.")
+
+    # ============================================================
+    # 🔹 Obtener ganadores de una fase específica
+    # ============================================================
+    def obtener_ganadores_fase(self, fase):
+        """Devuelve una lista con los equipos ganadores de la fase especificada."""
+        ganadores = []
+        for p in self.calendario.values():
+            if p.fase != fase:
+                continue
+            if p.goles_e1 is None or p.goles_e2 is None:
+                continue
+            if p.goles_e1 > p.goles_e2:
+                ganadores.append(self.equipos[p.id_equipo1])
+            elif p.goles_e2 > p.goles_e1:
+                ganadores.append(self.equipos[p.id_equipo2])
+        return ganadores
 
 def load_teams_from_excel(filename="FIFA_Sub20_2025_Equipos.xlsx"):
     path = os.path.join(SCRIPT_DIR, filename)
