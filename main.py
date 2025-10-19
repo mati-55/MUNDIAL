@@ -49,6 +49,7 @@ def run_assigner_and_flow():
     tk.Label(menu, text="Menú Principal", bg="#003366", fg="white",
              font=("Arial", 13, "bold")).pack(pady=10)
 
+    # 🔹 Botones principales (siempre visibles)
     tk.Button(menu, text="Asignar Grupos", width=20,
               command=lambda: abrir_asignacion(root)).pack(pady=5)
     tk.Button(menu, text="Fase de Grupos", width=20,
@@ -57,12 +58,14 @@ def run_assigner_and_flow():
               command=abrir_informe_fecha).pack(pady=5)
     tk.Button(menu, text="Llaves", width=20,
               command=abrir_llaves).pack(pady=5)
+
     root.mainloop()
 
 # ====================================================
 # ⚙️ Funciones de apertura
 # ====================================================
 def abrir_asignacion(root):
+    """Abre la ventana de asignación de grupos."""
     assign_win = tk.Toplevel(root)
     crear_encabezado(assign_win)
     GroupAssigner(assign_win)
@@ -80,14 +83,27 @@ def abrir_llaves():
     EliminationBracketUI(win)
     win.focus_force()
 
+# ====================================================
+# ⚽ Fase de Grupos (rutas corregidas)
+# ====================================================
 def abrir_fase_grupos(root):
-    grupos_path = os.path.join(os.path.dirname(__file__), "Grupos_Asignados_Sub20_2025.xlsx")
-    partidos_path = os.path.join(os.path.dirname(__file__), "FIFA_Sub20_2025_FaseGrupos_Partidos.xlsx")
+    """
+    Abre la ventana de fase de grupos si existen los archivos generados.
+    """
+    # 🔹 Determinar ruta donde están los archivos generados
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    data_dir = base_dir  # misma carpeta donde están assigner.py y phase_groups.py
+
+    grupos_path = os.path.join(data_dir, "Grupos_Asignados_Sub20_2025.xlsx")
+    partidos_path = os.path.join(data_dir, "FIFA_Sub20_2025_FaseGrupos_Partidos.xlsx")
 
     if not (os.path.exists(grupos_path) and os.path.exists(partidos_path)):
-        tk.messagebox.showwarning("Archivos no encontrados",
-                                  "Antes de abrir la Fase de Grupos debés asignar los equipos.")
+        tk.messagebox.showwarning(
+            "Archivos no encontrados",
+            "Antes de abrir la Fase de Grupos debés asignar los equipos y generar los partidos."
+        )
         return
+
     try:
         df_g = pd.read_excel(grupos_path)
         df_p = pd.read_excel(partidos_path)
@@ -95,28 +111,26 @@ def abrir_fase_grupos(root):
         tk.messagebox.showerror("Error", f"No se pudieron leer los archivos: {e}")
         return
 
+    # Crear estructuras a partir de los Excel
     assigned_groups = {}
     for _, row in df_g.iterrows():
         g = str(row["Grupo"]).strip().upper()
         eq = str(row["Equipo"]).strip()
         assigned_groups.setdefault(g, []).append(eq)
 
-    matches = []
+    generated_matches = []
     for _, row in df_p.iterrows():
-        matches.append({
+        generated_matches.append({
             "Grupo": str(row["Grupo"]).strip().upper(),
             "Jornada": int(row["Jornada"]),
             "Equipo1": str(row["Equipo1"]),
             "Equipo2": str(row["Equipo2"])
         })
 
-    # Asegura que la ventana quede visible
-    root.lift()
-    root.focus_force()
-
+    # Crear la ventana de fase de grupos
     win = tk.Toplevel(root)
     crear_encabezado(win)
-    PhaseGroupsUI(win, assigned_groups, matches)
+    PhaseGroupsUI(win, assigned_groups, generated_matches)
     win.focus_force()
 
 # ====================================================
