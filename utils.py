@@ -32,15 +32,34 @@ def small_center(root, w, h):
     root.geometry(f"{w}x{h}+{x}+{y}")
 
 def simple_prompt(root, title, prompt):
-    win = tk.Toplevel(root); win.title(title); win.transient(root); win.grab_set()
+    win = tk.Toplevel(root)
+    win.title(title)
+    win.transient(root)
+    win.focus_force()  # 🔹 Enfoca la ventana sin bloquear
     win.geometry("420x120")
-    x = root.winfo_x() + 50; y = root.winfo_y() + 50
+
+    # posiciona centrado respecto al root
+    x = root.winfo_x() + 50
+    y = root.winfo_y() + 50
     win.geometry(f"+{x}+{y}")
+
     ttk.Label(win, text=prompt).pack(pady=8)
-    entry = ttk.Entry(win, width=48); entry.pack(pady=6)
+    entry = ttk.Entry(win, width=48)
+    entry.pack(pady=6)
+
     val = {'text': None}
+
     def ok():
-        val['text'] = entry.get(); win.destroy()
+        val['text'] = entry.get()
+        win.destroy()
+        root.focus_force()  # vuelve el foco a la ventana principal
+
     ttk.Button(win, text="OK", command=ok).pack(pady=6)
-    root.wait_window(win)
-    return val['text']
+
+    # ✅ Eliminamos grab_set y wait_window (que bloqueaban)
+    # devolvemos el valor cuando se presione OK
+    def get_value():
+        return val['text']
+
+    return get_value
+
