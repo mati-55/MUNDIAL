@@ -128,13 +128,17 @@ class EliminationUI:
             messagebox.showerror("Error", "No se encontró el partido seleccionado en el calendario interno.")
             return
 
-        # create dialog
-        win = tk.Toplevel(self.master); win.title(f"Editar {mid}")
-        win.geometry("360x160"); win.transient(self.master); win.grab_set()
+        # crear ventana emergente
+        win = tk.Toplevel(self.master)
+        win.title(f"Editar {mid}")
+        win.geometry("360x160")
+        win.transient(self.master)  # se mantiene sobre la principal (sin bloquear)
+        win.focus_force()            # enfoca sin congelar la app
 
-        frm = ttk.Frame(win, padding=8); frm.pack(fill='both', expand=True)
+        frm = ttk.Frame(win, padding=8)
+        frm.pack(fill='both', expand=True)
 
-        # get team objects (fallback to id if missing)
+        # obtener equipos
         e1_obj = self.torneo.equipos.get(p.id_equipo1)
         e2_obj = self.torneo.equipos.get(p.id_equipo2)
         e1_name = e1_obj.pais if e1_obj else p.id_equipo1
@@ -142,34 +146,43 @@ class EliminationUI:
         e1_abbr = e1_obj.abreviatura if e1_obj and e1_obj.abreviatura else (e1_name[:3].upper() if e1_name else "")
         e2_abbr = e2_obj.abreviatura if e2_obj and e2_obj.abreviatura else (e2_name[:3].upper() if e2_name else "")
 
-        # header showing both teams + abreviaturas
-        ttk.Label(frm, text=f"{e1_name} ({e1_abbr})  vs  {e2_name} ({e2_abbr})").pack(pady=(0,6))
+        ttk.Label(frm, text=f"{e1_name} ({e1_abbr})  vs  {e2_name} ({e2_abbr})").pack(pady=(0, 6))
 
-        row = ttk.Frame(frm); row.pack()
+        row = ttk.Frame(frm)
+        row.pack()
         ttk.Label(row, text=f"Goles {e1_abbr}").pack(side='left', padx=6)
-        e1 = ttk.Entry(row, width=6); e1.pack(side='left')
+        e1 = ttk.Entry(row, width=6)
+        e1.pack(side='left')
         ttk.Label(row, text=f"Goles {e2_abbr}").pack(side='left', padx=6)
-        e2 = ttk.Entry(row, width=6); e2.pack(side='left')
+        e2 = ttk.Entry(row, width=6)
+        e2.pack(side='left')
 
-        # prefill existing goles
+        # prellenar goles existentes
         e1.insert(0, "" if p.goles_e1 is None else str(p.goles_e1))
         e2.insert(0, "" if p.goles_e2 is None else str(p.goles_e2))
 
         def save():
             try:
-                g1 = int(e1.get()); g2 = int(e2.get())
+                g1 = int(e1.get())
+                g2 = int(e2.get())
             except Exception:
                 messagebox.showerror("Error", "Goles deben ser enteros.")
+                win.focus_force()
                 return
-            p.goles_e1 = g1; p.goles_e2 = g2
-            # save and refresh
+
+            p.goles_e1 = g1
+            p.goles_e2 = g2
             self.torneo.guardar_datos()
             win.destroy()
             self.load_phase(self.current_phase)
-            # show confirmation with team names
-            messagebox.showinfo("Resultado guardado", f"{e1_name} ({e1_abbr}) {g1} : {g2} {e2_name} ({e2_abbr})")
+            messagebox.showinfo(
+                "Resultado guardado",
+                f"{e1_name} ({e1_abbr}) {g1} : {g2} {e2_name} ({e2_abbr})"
+            )
+            self.master.focus_force()  # vuelve el foco a la tabla principal
 
         ttk.Button(frm, text="Guardar", command=save).pack(pady=8)
+
 
     def save_phase(self):
         # nothing extra needed: partidos ya guardados al editar. Save JSON and export excel
