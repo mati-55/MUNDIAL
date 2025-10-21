@@ -36,7 +36,7 @@ class GroupAssigner:
         left = ttk.Frame(main)
         left.pack(side='left', fill='both', expand=True, padx=(0, 12))
         ttk.Label(left, text="Países disponibles").pack(anchor='w')
-        self.pool_listbox = tk.Listbox(left, font=('Segoe UI',12), bg="#4d115d", fg="black",
+        self.pool_listbox = tk.Listbox(left, font=('Segoe UI',12), bg="#ffffff", fg="black",
                                        selectbackground="#38568f", selectforeground="#cdaa1f") 
         self.pool_listbox.pack(fill='both', expand=True)
         self.pool_listbox.bind("<Button-1>", self.on_country_click)
@@ -193,4 +193,8 @@ class GroupAssigner:
         # Mantener referencias de datos
         self.assigned_data = self.groups.copy()
         self.generated_matches = matches
+
+        flag_path = os.path.join(os.path.dirname(__file__), "grupos_asignados.flag")
+        with open(flag_path, "w") as f:
+            f.write("ok")
 
